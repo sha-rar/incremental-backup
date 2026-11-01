@@ -1,2 +1,1 @@
-# incremental-backup
-Automated Backup Tool.
+# Incremental Backup Tool
