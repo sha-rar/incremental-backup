@@ -50,7 +50,7 @@ public sealed record BackupPlan
             Path.GetFullPath(plan.DestinationDirectory, basePath), plan.Exclusions);
     }
 
-    internal BackupPlan ValidateForBackup()
+    public BackupPlan ValidateForBackup()
     {
         var destination = PathSafety.DirectoryPath(DestinationDirectory);
         PathSafety.EnsureNoLinks(destination);
