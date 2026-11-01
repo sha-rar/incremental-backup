@@ -12,9 +12,10 @@ internal sealed class ExclusionMatcher
         patterns = exclusions.Select(pattern =>
         {
             var normalized = Normalize(pattern);
+            var anchored = normalized.Contains('/');
             if (normalized.EndsWith("/**", StringComparison.Ordinal))
                 normalized = normalized[..^3];
-            var expression = new StringBuilder(normalized.Contains('/') ? "^" : "(?:^|/)");
+            var expression = new StringBuilder(anchored ? "^" : "(?:^|/)");
             for (var i = 0; i < normalized.Length; i++)
             {
                 if (normalized[i] == '*' && i + 1 < normalized.Length && normalized[i + 1] == '*')

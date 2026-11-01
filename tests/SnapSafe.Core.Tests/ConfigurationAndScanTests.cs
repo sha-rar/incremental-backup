@@ -78,4 +78,16 @@ public class ConfigurationAndScanTests
         var destination = (OperatingSystem.IsWindows() ? @"\\?\" : "") + Path.Combine(source, "backup");
         Assert.Throws<ArgumentException>(() => DirectoryScanner.Scan(new BackupPlan(source, destination)));
     }
+
+    [Fact]
+    public void WindowsDeviceNamespaceIsRejectedBeforeBackupScanning()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var temp = new TestDirectory();
+        var source = temp.CreateDirectory("input");
+        var destination = @"\\.\" + Path.Combine(source, "backup");
+        Assert.Throws<ArgumentException>(() => DirectoryScanner.Scan(new BackupPlan(source, destination)));
+        Assert.False(Directory.Exists(Path.Combine(source, "backup")));
+    }
 }

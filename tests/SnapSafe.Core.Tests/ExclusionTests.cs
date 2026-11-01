@@ -94,4 +94,18 @@ public class ExclusionTests
         var source = temp.CreateDirectory("input");
         Assert.Throws<ArgumentException>(() => DirectoryScanner.Scan(new BackupPlan(source, Path.Combine(temp.Root, "bad|repo"))));
     }
+
+    [Fact]
+    public void WholeSourceExclusionStaysAnchoredToThatSource()
+    {
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "exclude");
+        temp.Write("other/docs/keep.txt", "keep");
+        temp.Write("other/root.txt", "keep");
+        var plan = new BackupPlan([new BackupSource("docs", temp.PathFor("input")), new BackupSource("other", temp.PathFor("other"))],
+            temp.PathFor("backup"), ["docs/**"]);
+        var scan = DirectoryScanner.Scan(plan);
+        Assert.Equal(["other/docs/keep.txt", "other/root.txt"], scan.Files.Select(file => file.RelativePath));
+        Assert.Equal(["docs", "other", "other/docs"], scan.Directories);
+    }
 }

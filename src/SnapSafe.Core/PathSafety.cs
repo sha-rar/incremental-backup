@@ -32,6 +32,8 @@ internal static class PathSafety
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var fullPath = Path.GetFullPath(path);
+        if (OperatingSystem.IsWindows() && fullPath.StartsWith(@"\\.\", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Windows device namespace paths are not supported. Use a drive-letter or UNC directory path.", nameof(path));
         var root = Path.GetPathRoot(fullPath)!;
         foreach (var segment in fullPath[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
             ValidateSegment(segment);

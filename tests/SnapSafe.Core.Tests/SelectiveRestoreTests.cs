@@ -172,4 +172,18 @@ public class SelectiveRestoreTests
         Assert.Equal("keep", await File.ReadAllTextAsync(path));
         Assert.Empty(Directory.GetFiles(temp.PathFor("restore"), ".snapsafe-*", SearchOption.AllDirectories));
     }
+
+    [Fact]
+    public async Task WindowsDeviceAliasCannotAllowOverwriteRestorationInsideRepository()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "data");
+        var snapshot = (await Backup(temp)).Snapshot;
+        var alias = @"\\.\" + temp.PathFor("backup");
+        await Assert.ThrowsAsync<ArgumentException>(() => engine.RestoreAsync(alias, snapshot.Id, temp.PathFor("backup/restored"),
+            new RestoreOptions { ConflictPolicy = RestoreConflictPolicy.Overwrite }));
+        Assert.False(Directory.Exists(temp.PathFor("backup/restored")));
+    }
 }
