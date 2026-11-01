@@ -154,4 +154,61 @@ public class WorkspaceTests
             throw new InvalidOperationException("Cancellation should end this operation.");
         }
     }
+
+    [Fact]
+    public async Task FailedJobSelectionNotifiesTheViewToRestoreTheActiveJob()
+    {
+        using var temp = new TestFolder();
+        temp.Write("input/file", "data");
+        var first = new BackupJobSettings { Name = "First", Sources = [new BackupSource("docs", temp.At("input"))], DestinationDirectory = temp.At("backup-one") };
+        var second = first with { Id = Guid.NewGuid(), Name = "Second", DestinationDirectory = temp.At("backup-two") };
+        var store = new SettingsStore(temp.At("settings.json"));
+        await store.SaveAsync(new DesktopSettings { Jobs = [first, second], SelectedJobId = first.Id });
+        var workspace = Workspace(temp);
+        await workspace.InitializeAsync();
+        var notified = false;
+        workspace.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(workspace.SelectedJob)) notified = true; };
+        using (File.Open(store.FilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            await workspace.SelectJobAsync(workspace.Jobs[1]);
+        Assert.NotEmpty(workspace.ErrorMessage);
+        Assert.Equal(first.Id, workspace.SelectedJob!.Settings.Id);
+        Assert.Equal("First", workspace.Editor.Name);
+        Assert.True(notified);
+        Assert.False(workspace.IsBusy);
+    }
+
+    [Fact]
+    public async Task ClosingPreferencesCannotSilentlyDiscardUnsavedJobEdits()
+    {
+        using var temp = new TestFolder();
+        temp.Write("input/file", "data");
+        var workspace = Workspace(temp);
+        await Configure(workspace, temp);
+        var original = await File.ReadAllTextAsync(temp.At("settings.json"));
+        workspace.Editor.ExclusionsText = "private/**";
+        await Assert.ThrowsAsync<InvalidOperationException>(() => workspace.SavePreferencesAsync());
+        Assert.Equal(original, await File.ReadAllTextAsync(temp.At("settings.json")));
+        Assert.True(workspace.Editor.IsDirty);
+    }
+
+    [Fact]
+    public async Task MissingPreviouslyUsedRepositoryIsReportedInsteadOfAppearingEmpty()
+    {
+        using var temp = new TestFolder();
+        temp.Write("input/file", "data");
+        var workspace = Workspace(temp);
+        await Configure(workspace, temp);
+        await workspace.BackupAsync();
+        Directory.Move(temp.At("backup"), temp.At("offline-backup"));
+        await workspace.RefreshAsync();
+        Assert.Equal("Unavailable", workspace.SelectedJob!.Status);
+        Assert.NotEmpty(workspace.ErrorMessage);
+        Assert.Empty(workspace.Snapshots);
+        Assert.False(workspace.CanRestore);
+        Directory.Move(temp.At("offline-backup"), temp.At("backup"));
+        await workspace.RefreshAsync();
+        Assert.Empty(workspace.ErrorMessage);
+        Assert.Single(workspace.Snapshots);
+        Assert.Equal("Ready", workspace.SelectedJob.Status);
+    }
 }

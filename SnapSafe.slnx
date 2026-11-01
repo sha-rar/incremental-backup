@@ -3,6 +3,7 @@
     <Project Path="src/SnapSafe.Core/SnapSafe.Core.csproj" />
     <Project Path="src/SnapSafe.Cli/SnapSafe.Cli.csproj" />
     <Project Path="src/SnapSafe.Desktop.Model/SnapSafe.Desktop.Model.csproj" />
+    <Project Path="src/SnapSafe.Desktop/SnapSafe.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SnapSafe.Core.Tests/SnapSafe.Core.Tests.csproj" />

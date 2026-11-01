@@ -13,11 +13,13 @@ public sealed class JobCard(BackupJobSettings settings) : ObservableObject
     public int SnapshotCount => overview.Snapshots.Count;
     public long StorageBytes => overview.StorageBytes;
     public string StorageText => DisplaySize.Format(StorageBytes);
-    public string LastBackup => overview.Snapshots.FirstOrDefault()?.CreatedAtUtc.ToLocalTime().ToString("g") ?? "Never";
+    public string LastBackup => overview.Snapshots.FirstOrDefault()?.CreatedAtUtc.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Never";
     public string Status { get => status; set => Set(ref status, value); }
     internal IReadOnlyList<SnapshotSummary> History => overview.Snapshots;
+    internal bool Available { get; set; } = true;
     internal void Update(RepositoryOverview value)
     {
+        Available = true;
         overview = value;
         Changed(nameof(SnapshotCount)); Changed(nameof(StorageBytes)); Changed(nameof(StorageText)); Changed(nameof(LastBackup));
         Status = SnapshotCount == 0 ? "No backups yet" : "Ready";
@@ -151,14 +153,22 @@ public sealed class DesktopWorkspace : ObservableObject
             await LoadHistoryAsync(token); StatusMessage = "Job removed. Its backup snapshots were kept.";
         });
     }
-    public Task SelectJobAsync(JobCard? job)
+    public async Task SelectJobAsync(JobCard? job)
     {
-        if (!CanChooseJob || job is null || job == SelectedJob) return Task.CompletedTask;
-        return RunAsync("Loading job…", async token =>
+        if (!CanChooseJob || job is null || job == SelectedJob || !Jobs.Contains(job))
         {
-            await store.SaveAsync(Settings(selected: job.Settings.Id), token);
-            SelectDirect(job); await RefreshCardAsync(job, token); await LoadHistoryAsync(token); StatusMessage = "Ready";
-        });
+            if (job != SelectedJob) Changed(nameof(SelectedJob));
+            return;
+        }
+        try
+        {
+            await RunAsync("Loading job…", async token =>
+            {
+                await store.SaveAsync(Settings(selected: job.Settings.Id), token);
+                SelectDirect(job); await RefreshCardAsync(job, token); await LoadHistoryAsync(token); StatusMessage = "Ready";
+            });
+        }
+        finally { Changed(nameof(SelectedJob)); }
     }
     public Task RefreshAsync()
     {
@@ -171,14 +181,20 @@ public sealed class DesktopWorkspace : ObservableObject
     }
     private async Task RefreshCardAsync(JobCard job, CancellationToken token)
     {
-        try { job.Update(await service.OverviewAsync(job.Destination, token)); }
+        try
+        {
+            var overview = await service.OverviewAsync(job.Destination, token);
+            if (job.SnapshotCount > 0 && overview.Snapshots.Count == 0)
+                throw new IOException($"Previously backed-up snapshots are unavailable at {job.Destination}. Check the destination and refresh.");
+            job.Update(overview);
+        }
         catch (OperationCanceledException) { throw; }
-        catch (Exception exception) { job.Status = "Unavailable"; ErrorMessage = exception.Message; }
+        catch (Exception exception) { job.Available = false; job.Status = "Unavailable"; ErrorMessage = exception.Message; }
     }
     private async Task LoadHistoryAsync(CancellationToken token)
     {
         ClearHistory();
-        if (SelectedJob is null) return;
+        if (SelectedJob is null || !SelectedJob.Available) return;
         foreach (var snapshot in SelectedJob.History) Snapshots.Add(snapshot);
         if (Snapshots.FirstOrDefault() is { } first) await InspectAsync(first, token);
     }
@@ -232,7 +248,11 @@ public sealed class DesktopWorkspace : ObservableObject
             StatusMessage = $"Restore complete: {result.RestoredFiles} restored, {result.SkippedFiles} skipped, {result.RenamedFiles.Count} renamed.";
         });
     }
-    public Task SavePreferencesAsync() => initialized && !settingsFailed ? store.SaveAsync(Settings()) : Task.CompletedTask;
+    public Task SavePreferencesAsync()
+    {
+        if (Editor.IsDirty) throw new InvalidOperationException("Save or discard job edits before closing.");
+        return initialized && !settingsFailed ? store.SaveAsync(Settings()) : Task.CompletedTask;
+    }
     public void Cancel() => operation?.Cancel();
     public Task WaitForIdleAsync() => completion?.Task ?? Task.CompletedTask;
     private async Task RunAsync(string message, Func<CancellationToken, Task> action)

@@ -1,0 +1,121 @@
+<Window x:Class="SnapSafe.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SnapSafe" Width="1240" Height="860" MinWidth="1020" MinHeight="740"
+        Background="#F3F7FA" Foreground="#193443" FontFamily="Segoe UI" FontSize="13"
+        WindowStartupLocation="CenterScreen" Loaded="Window_Loaded" Closing="Window_Closing">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#123B48" Padding="28,18">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel><TextBlock Text="SnapSafe" Foreground="White" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock Text="Keep your files. Keep their history." Foreground="#BCD4DD" Margin="0,4,0,0" /></StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Refresh" Click="Refresh_Click" IsEnabled="{Binding CanChooseJob}" />
+                    <Button Content="Back up now" Style="{StaticResource PrimaryButton}" Click="Backup_Click" IsEnabled="{Binding CanRun}" AutomationProperties.AutomationId="BackupNow" />
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Border DockPanel.Dock="Top" Background="White" Padding="28,12" BorderBrush="#DFE7EC" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Current job" VerticalAlignment="Center" Margin="0,0,14,0" />
+                <ComboBox ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob, Mode=OneWay}" DisplayMemberPath="Name" Width="300"
+                          SelectionChanged="Job_SelectionChanged" IsEnabled="{Binding CanChooseJob}" AutomationProperties.Name="Current job" />
+                <Button Content="New job" Margin="16,0,0,0" Click="NewJob_Click" IsEnabled="{Binding CanChooseJob}" />
+                <TextBlock Text="{Binding JobCountText}" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="20,0,0,0" />
+            </StackPanel>
+        </Border>
+        <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="#DFE7EC" BorderThickness="0,1,0,0" Padding="28,12">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel><TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ProgressText}" Foreground="#5F7180" FontSize="12" Margin="0,4,12,0" TextTrimming="CharacterEllipsis" />
+                    <ProgressBar Height="4" Margin="0,8,20,0" IsIndeterminate="True" Visibility="{Binding IsBusy, Converter={StaticResource BooleanVisibility}}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="Cancel operation" Click="Cancel_Click" Visibility="{Binding IsBusy, Converter={StaticResource BooleanVisibility}}" />
+            </Grid>
+        </Border>
+        <Border DockPanel.Dock="Top" Margin="28,12,28,0" Padding="12" Background="#FCE8E6" CornerRadius="5" Visibility="{Binding HasError, Converter={StaticResource BooleanVisibility}}">
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="#912D2D" TextWrapping="Wrap" />
+        </Border>
+        <TabControl x:Name="MainTabs" Margin="28,20,28,20" Background="Transparent" BorderThickness="0">
+            <TabItem Header="Dashboard">
+                <Grid Margin="0,24,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <StackPanel><TextBlock Text="Your backup overview" Style="{StaticResource SectionTitle}" /><TextBlock Text="Select a job to see its latest backup and storage use." Style="{StaticResource Caption}" /></StackPanel>
+                    <UniformGrid Grid.Row="1" Columns="3" Margin="0,14,0,24">
+                        <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="LATEST BACKUP (UTC)" Style="{StaticResource Caption}" /><TextBlock Text="{Binding SelectedJob.LastBackup, TargetNullValue=Never, FallbackValue=Never}" FontSize="22" FontWeight="SemiBold" /></StackPanel></Border>
+                        <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="SNAPSHOTS" Style="{StaticResource Caption}" /><TextBlock Text="{Binding SelectedJob.SnapshotCount, TargetNullValue=0, FallbackValue=0}" FontSize="28" FontWeight="SemiBold" /></StackPanel></Border>
+                        <Border Style="{StaticResource Card}" Margin="0"><StackPanel><TextBlock Text="STORAGE USED" Style="{StaticResource Caption}" /><TextBlock Text="{Binding SelectedJob.StorageText, TargetNullValue=0 B, FallbackValue=0 B}" FontSize="28" FontWeight="SemiBold" /></StackPanel></Border>
+                    </UniformGrid>
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding Jobs}" SelectedItem="{Binding SelectedJob, Mode=OneWay}" SelectionChanged="Job_SelectionChanged" IsEnabled="{Binding CanChooseJob}" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Backup job" Binding="{Binding Name}" Width="160" />
+                            <DataGridTextColumn Header="Destination" Binding="{Binding Destination}" Width="*" />
+                            <DataGridTextColumn Header="Latest backup (UTC)" Binding="{Binding LastBackup}" Width="170" />
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="130" />
+                            <DataGridTextColumn Header="Storage" Binding="{Binding StorageText}" Width="100" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Grid.Row="3" Margin="0,16,0,0" Text="Create a job to choose folders. Run a backup, then open History &amp; restore to recover a version." Foreground="#5F7180" TextWrapping="Wrap" />
+                </Grid>
+            </TabItem>
+            <TabItem Header="Backup jobs">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,20,0,0">
+                    <StackPanel IsEnabled="{Binding CanEdit}">
+                        <TextBlock Text="Configure your backup" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="Save or discard your edits before switching jobs or starting a backup." Style="{StaticResource Caption}" />
+                        <TextBlock Text="Job name" Margin="0,10,0,6" />
+                        <TextBox Text="{Binding Editor.Name, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Job name" />
+                        <DockPanel Margin="0,16,0,8"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Content="Add folders" Click="AddSources_Click" /><Button Content="Remove source" Click="RemoveSource_Click" />
+                        </StackPanel><TextBlock Text="Source folders" VerticalAlignment="Center" FontWeight="SemiBold" /></DockPanel>
+                        <DataGrid x:Name="SourceGrid" Height="135" ItemsSource="{Binding Editor.Sources}">
+                            <DataGrid.Columns><DataGridTextColumn Header="Restore folder name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="200" />
+                                <DataGridTextColumn Header="Source directory" Binding="{Binding Directory}" Width="*" IsReadOnly="True" /></DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock Text="Backup destination" Margin="0,16,0,6" />
+                        <DockPanel><Button DockPanel.Dock="Right" Content="Browse destination" Click="Destination_Click" Margin="10,0,0,0" />
+                            <TextBox Text="{Binding Editor.DestinationDirectory, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Backup destination" /></DockPanel>
+                        <TextBlock Text="Exclusions (one pattern per line)" Margin="0,14,0,6" />
+                        <TextBox Text="{Binding Editor.ExclusionsText, UpdateSourceTrigger=PropertyChanged}" Height="65" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Exclusions" />
+                        <TextBlock Text="Examples: *.tmp or **/bin/**. Named source folders appear at the top level when restoring." Foreground="#5F7180" Margin="0,5,0,10" />
+                        <CheckBox Content="Make a full copy each time (otherwise reuse unchanged files)" IsChecked="{Binding Editor.FullBackup}" Margin="0,2,0,16" />
+                        <StackPanel Orientation="Horizontal"><Button Content="Save job" Style="{StaticResource PrimaryButton}" Click="SaveJob_Click" IsEnabled="{Binding CanSave}" />
+                            <Button Content="Discard edits" Click="Discard_Click" /><Button Content="Remove job" Click="RemoveJob_Click" IsEnabled="{Binding CanRun}" /></StackPanel>
+                        <TextBlock Text="Removing a job keeps its existing backup snapshots." Foreground="#5F7180" Margin="0,8,0,12" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="History &amp; restore">
+                <Grid Margin="0,20,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <StackPanel><TextBlock Text="Find the version you need" Style="{StaticResource SectionTitle}" /><TextBlock Text="Choose a snapshot, then check files or folders to restore. Older versions stay available when source files are deleted." Style="{StaticResource Caption}" /></StackPanel>
+                    <Grid Grid.Row="1" Margin="0,8,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="330" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <DataGrid ItemsSource="{Binding Snapshots}" SelectedItem="{Binding SelectedSnapshot, Mode=OneWay}" SelectionChanged="Snapshot_SelectionChanged" IsReadOnly="True" IsEnabled="{Binding CanRun}">
+                            <DataGrid.Columns><DataGridTextColumn Header="Created (UTC)" Binding="{Binding CreatedAtUtc, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="*" /><DataGridTextColumn Header="Files" Binding="{Binding FileCount}" Width="55" /></DataGrid.Columns>
+                        </DataGrid>
+                        <DockPanel Grid.Column="2">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button Content="Select all" Click="SelectAll_Click" IsEnabled="{Binding CanRestore}" /><Button Content="Clear selection" Click="ClearSelection_Click" IsEnabled="{Binding CanRestore}" />
+                                <TextBlock Text="{Binding SelectedEntryCount, StringFormat=Selected: {0}}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <DataGrid ItemsSource="{Binding Entries}" IsEnabled="{Binding CanRun}">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Header="" Width="35"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox HorizontalAlignment="Center" VerticalAlignment="Center" IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding RelativePath}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Path" Binding="{Binding RelativePath}" Width="*" IsReadOnly="True" /><DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="65" IsReadOnly="True" /><DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="80" IsReadOnly="True" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Grid>
+                    <StackPanel Grid.Row="2" IsEnabled="{Binding CanRun}">
+                        <TextBlock Text="Restore to" Margin="0,0,0,6" />
+                        <DockPanel><Button DockPanel.Dock="Right" Content="Browse restore folder" Click="RestoreDestination_Click" Margin="10,0,0,0" />
+                            <TextBox Text="{Binding RestoreDirectory, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Restore destination" /></DockPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,10"><TextBlock Text="If files already exist" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <ComboBox ItemsSource="{Binding ConflictPolicies}" SelectedItem="{Binding ConflictPolicy}" Width="150" AutomationProperties.Name="Restore conflict policy" />
+                            <TextBlock Text="Fail stops on conflicts. Rename keeps both copies." VerticalAlignment="Center" Margin="14,0,0,0" Foreground="#5F7180" /></StackPanel>
+                        <StackPanel Orientation="Horizontal"><Button Content="Restore selected" Style="{StaticResource PrimaryButton}" Click="RestoreSelected_Click" IsEnabled="{Binding CanRestoreSelected}" />
+                            <Button Content="Restore entire snapshot" Click="RestoreAll_Click" IsEnabled="{Binding CanRestore}" /></StackPanel>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
