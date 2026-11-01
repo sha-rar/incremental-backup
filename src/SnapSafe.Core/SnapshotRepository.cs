@@ -59,32 +59,35 @@ internal sealed class SnapshotRepository : IDisposable
         return path;
     }
 
-    internal async Task<SnapshotManifest> ReadAsync(string id, CancellationToken cancellationToken)
+    internal async Task<SnapshotManifest> ReadAsync(string id, CancellationToken cancellationToken, bool requireComplete = true)
     {
         var path = Path.Combine(SnapshotDirectory(id), "manifest.json");
         PathSafety.EnsureNoLinks(path);
         await using var stream = File.OpenRead(path);
         var manifest = await JsonSerializer.DeserializeAsync<SnapshotManifest>(stream, JsonOptions, cancellationToken)
             ?? throw new InvalidDataException("Empty snapshot manifest.");
-        ValidateManifest(manifest, id);
+        ValidateManifest(manifest, id, requireComplete);
         return manifest;
     }
 
-    internal async Task<SnapshotManifest?> LatestAsync(CancellationToken cancellationToken)
+    internal async Task<SnapshotManifest?> LatestAsync(CancellationToken cancellationToken) =>
+        (await ListAsync(cancellationToken)).FirstOrDefault();
+
+    internal async Task<IReadOnlyList<SnapshotManifest>> ListAsync(CancellationToken cancellationToken)
     {
-        SnapshotManifest? latest = null;
+        var snapshots = new List<SnapshotManifest>();
         foreach (var directory in Directory.EnumerateDirectories(SnapshotsDirectory))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var id = Path.GetFileName(directory);
             if (!Guid.TryParseExact(id, "N", out _))
                 continue;
-            var manifest = await ReadAsync(id, cancellationToken);
-            if (latest is null || manifest.CreatedAtUtc > latest.CreatedAtUtc ||
-                (manifest.CreatedAtUtc == latest.CreatedAtUtc && string.CompareOrdinal(manifest.Id, latest.Id) > 0))
-                latest = manifest;
+            var manifest = await ReadAsync(id, cancellationToken, requireComplete: false);
+            if (manifest.Complete)
+                snapshots.Add(manifest);
         }
-        return latest;
+        return snapshots.OrderByDescending(snapshot => snapshot.CreatedAtUtc)
+            .ThenByDescending(snapshot => snapshot.Id, StringComparer.Ordinal).ToArray();
     }
 
     internal void RemoveStaleStaging(CancellationToken cancellationToken)
@@ -118,11 +121,15 @@ internal sealed class SnapshotRepository : IDisposable
         Directory.Delete(path, recursive: true);
     }
 
-    internal static void ValidateManifest(SnapshotManifest manifest, string id)
+    internal static void ValidateManifest(SnapshotManifest manifest, string id, bool requireComplete = true)
     {
-        if (manifest.FormatVersion != 1 || manifest.Id != id || !manifest.Complete ||
+        if (manifest.FormatVersion != 1 || manifest.Id != id || (requireComplete && !manifest.Complete) ||
             manifest.Sources is null || manifest.Sources.Length == 0 || manifest.Directories is null || manifest.Files is null)
             throw new InvalidDataException("Unsupported or incomplete snapshot manifest.");
+        if (manifest.Exclusions is null)
+            throw new InvalidDataException("Invalid snapshot exclusions.");
+        foreach (var pattern in manifest.Exclusions)
+            _ = ExclusionMatcher.Normalize(pattern);
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in manifest.Sources)
         {

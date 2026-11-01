@@ -4,6 +4,22 @@ namespace SnapSafe.Core;
 
 public sealed class BackupEngine
 {
+    public async Task<IReadOnlyList<SnapshotSummary>> ListSnapshotsAsync(string repository, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false);
+        var snapshots = await store.ListAsync(cancellationToken);
+        return Array.AsReadOnly(snapshots.Select(snapshot => new SnapshotSummary(snapshot.Id, snapshot.CreatedAtUtc,
+            snapshot.Files.Length, snapshot.Files.Sum(file => file.Length), snapshot.Complete)).ToArray());
+    }
+
+    public async Task<SnapshotManifest> GetSnapshotAsync(string repository, string snapshotId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false);
+        return await store.ReadAsync(snapshotId, cancellationToken);
+    }
+
     public async Task<BackupResult> CreateSnapshotAsync(BackupPlan plan, bool fullBackup = false,
         IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
