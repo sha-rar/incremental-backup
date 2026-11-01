@@ -4,6 +4,10 @@ namespace SnapSafe.Core;
 
 public sealed class BackupEngine
 {
+    public Task<RestoreResult> RestoreAsync(string repository, string snapshotId, string destination,
+        RestoreOptions options, CancellationToken cancellationToken = default) =>
+        SnapshotRestorer.RestoreAsync(repository, snapshotId, destination, options, cancellationToken);
+
     public async Task<IReadOnlyList<SnapshotSummary>> ListSnapshotsAsync(string repository, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -90,6 +94,7 @@ public sealed class BackupEngine
     public async Task RestoreAsync(string repository, string snapshotId, string destination,
         CancellationToken cancellationToken = default)
     {
+        // Retain the Phase 1 overload's empty-target contract. Options enable explicit merging.
         cancellationToken.ThrowIfCancellationRequested();
         SnapshotRepository.ValidateSnapshotId(snapshotId);
         repository = Path.GetFullPath(repository);
@@ -99,38 +104,6 @@ public sealed class BackupEngine
         PathSafety.EnsureNoLinks(destination);
         if (File.Exists(destination) || (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any()))
             throw new IOException("Restore destination must be a new or empty directory.");
-        using var store = new SnapshotRepository(repository, create: false);
-        var manifest = await store.ReadAsync(snapshotId, cancellationToken);
-        // Validate all content before creating the destination tree.
-        foreach (var file in manifest.Files)
-            await FileIntegrity.VerifyAsync(store.StoredPath(file), file, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        Directory.CreateDirectory(destination);
-        foreach (var directory in manifest.Directories)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var path = PathSafety.Resolve(destination, directory);
-            PathSafety.EnsureNoLinks(path);
-            Directory.CreateDirectory(path);
-        }
-        foreach (var file in manifest.Files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var path = PathSafety.Resolve(destination, file.RelativePath);
-            PathSafety.EnsureNoLinks(path);
-            var temporary = Path.Combine(Path.GetDirectoryName(path)!, ".snapsafe-" + Guid.NewGuid().ToString("N") + ".tmp");
-            try
-            {
-                await using (var input = FileIntegrity.OpenRead(store.StoredPath(file)))
-                    await FileIntegrity.CopyVerifiedAsync(input, temporary, file, cancellationToken);
-                PathSafety.EnsureNoLinks(path);
-                File.Move(temporary, path, overwrite: false);
-            }
-            finally
-            {
-                if (File.Exists(temporary))
-                    File.Delete(temporary);
-            }
-        }
+        await RestoreAsync(repository, snapshotId, destination, new RestoreOptions(), cancellationToken);
     }
 }
