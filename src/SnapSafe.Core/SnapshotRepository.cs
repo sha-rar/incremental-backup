@@ -6,6 +6,7 @@ internal sealed class SnapshotRepository : IDisposable
 {
     internal static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly FileStream repositoryLock;
+    private readonly Dictionary<string, Dictionary<string, SnapshotFile>> ownedFiles = new(StringComparer.Ordinal);
     internal string SnapshotsDirectory { get; }
 
     internal SnapshotRepository(string directory, bool create)
@@ -47,13 +48,19 @@ internal sealed class SnapshotRepository : IDisposable
         return path;
     }
 
-    internal string StoredPath(SnapshotFile file)
+    internal async Task<string> StoredPathAsync(SnapshotFile file, CancellationToken cancellationToken)
     {
         var directory = SnapshotDirectory(file.StorageSnapshotId);
-        var manifest = Path.Combine(directory, "manifest.json");
-        PathSafety.EnsureNoLinks(manifest);
-        if (!File.Exists(manifest))
-            throw new InvalidDataException($"Referenced snapshot is missing: {file.StorageSnapshotId}");
+        if (!ownedFiles.TryGetValue(file.StorageSnapshotId, out var files))
+        {
+            var manifest = await ReadAsync(file.StorageSnapshotId, cancellationToken);
+            files = manifest.Files.Where(entry => entry.StorageSnapshotId == manifest.Id)
+                .ToDictionary(entry => entry.RelativePath, StringComparer.Ordinal);
+            ownedFiles.Add(file.StorageSnapshotId, files);
+        }
+        if (!files.TryGetValue(file.RelativePath, out var stored) || stored.Length != file.Length ||
+            !string.Equals(stored.Sha256, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Referenced data does not match its owning snapshot: {file.RelativePath}");
         var path = PathSafety.Resolve(Path.Combine(directory, "files"), file.RelativePath);
         PathSafety.EnsureNoLinks(path);
         return path;

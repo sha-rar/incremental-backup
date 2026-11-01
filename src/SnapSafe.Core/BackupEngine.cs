@@ -52,7 +52,7 @@ public sealed class BackupEngine
                 if (previousFiles.TryGetValue(file.RelativePath, out var old) && old.Length == length && old.Sha256 == hash)
                 {
                     // Do not propagate a damaged previous copy into another completed snapshot.
-                    await FileIntegrity.VerifyAsync(repository.StoredPath(old), old, cancellationToken);
+                    await FileIntegrity.VerifyAsync(await repository.StoredPathAsync(old, cancellationToken), old, cancellationToken);
                     files.Add(old);
                 }
                 else

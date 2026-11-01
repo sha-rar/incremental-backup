@@ -25,7 +25,7 @@ internal static class SnapshotRestorer
         var planned = PlanFiles(destination, selected, options.ConflictPolicy, cancellationToken);
         // Check all selected, non-skipped data before altering existing destination contents.
         foreach (var file in planned)
-            await FileIntegrity.VerifyAsync(store.StoredPath(file.File), file.File, cancellationToken);
+            await FileIntegrity.VerifyAsync(await store.StoredPathAsync(file.File, cancellationToken), file.File, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(destination);
         foreach (var directory in selected.Directories)
@@ -42,7 +42,7 @@ internal static class SnapshotRestorer
             var temporary = Path.Combine(Path.GetDirectoryName(file.FullPath)!, ".snapsafe-" + Guid.NewGuid().ToString("N") + ".tmp");
             try
             {
-                await using (var input = FileIntegrity.OpenRead(store.StoredPath(file.File)))
+                await using (var input = FileIntegrity.OpenRead(await store.StoredPathAsync(file.File, cancellationToken)))
                     await FileIntegrity.CopyVerifiedAsync(input, temporary, file.File, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 PathSafety.EnsureNoLinks(file.FullPath);
