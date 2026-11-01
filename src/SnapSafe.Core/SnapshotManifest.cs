@@ -27,4 +27,7 @@ public sealed record SnapshotManifest
 }
 
 public sealed record BackupProgress(string RelativePath, int ProcessedFiles, int CopiedFiles);
-public sealed record BackupResult(SnapshotManifest Snapshot, int CopiedFiles, int ReusedFiles);
+public sealed record BackupResult(SnapshotManifest Snapshot, int CopiedFiles, int ReusedFiles)
+{
+    public long SourceBytesRead { get; init; }
+}

@@ -29,8 +29,9 @@ public static class DirectoryScanner
                     if (exclusions.IsExcluded(relative))
                         continue;
                     PathSafety.ValidateSegment(Path.GetFileName(entry));
-                    PathSafety.EnsureNoLinks(entry);
-                    if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
+                    var attributes = File.GetAttributes(entry);
+                    if ((attributes & FileAttributes.ReparsePoint) != 0) throw new IOException($"Filesystem links are not supported: {entry}");
+                    if ((attributes & FileAttributes.Directory) != 0)
                         pending.Push(entry);
                     else
                     {

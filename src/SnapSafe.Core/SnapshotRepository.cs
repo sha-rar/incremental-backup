@@ -8,12 +8,15 @@ internal sealed class SnapshotRepository : IDisposable
     private readonly FileStream repositoryLock;
     private readonly Dictionary<string, Dictionary<string, SnapshotFile>> ownedFiles = new(StringComparer.Ordinal);
     internal string SnapshotsDirectory { get; }
+    internal string RetainedDataDirectory { get; }
 
     internal SnapshotRepository(string directory, bool create)
     {
         directory = Path.GetFullPath(directory);
         PathSafety.EnsureNoLinks(directory);
         SnapshotsDirectory = Path.Combine(directory, "snapshots");
+        RetainedDataDirectory = Path.Combine(directory, "retained-data");
+        PathSafety.EnsureNoLinks(RetainedDataDirectory);
         PathSafety.EnsureNoLinks(SnapshotsDirectory);
         var lockPath = Path.Combine(directory, ".lock");
         PathSafety.EnsureNoLinks(lockPath);
@@ -51,9 +54,10 @@ internal sealed class SnapshotRepository : IDisposable
     internal async Task<string> StoredPathAsync(SnapshotFile file, CancellationToken cancellationToken)
     {
         var directory = SnapshotDirectory(file.StorageSnapshotId);
+        if (!Directory.Exists(directory)) directory = RetainedDirectory(file.StorageSnapshotId);
         if (!ownedFiles.TryGetValue(file.StorageSnapshotId, out var files))
         {
-            var manifest = await ReadAsync(file.StorageSnapshotId, cancellationToken);
+            var manifest = await ReadManifestAtAsync(directory, file.StorageSnapshotId, cancellationToken);
             files = manifest.Files.Where(entry => entry.StorageSnapshotId == manifest.Id)
                 .ToDictionary(entry => entry.RelativePath, StringComparer.Ordinal);
             ownedFiles.Add(file.StorageSnapshotId, files);
@@ -67,8 +71,19 @@ internal sealed class SnapshotRepository : IDisposable
     }
 
     internal async Task<SnapshotManifest> ReadAsync(string id, CancellationToken cancellationToken, bool requireComplete = true)
+        => await ReadManifestAtAsync(SnapshotDirectory(id), id, cancellationToken, requireComplete);
+
+    internal string RetainedDirectory(string id)
     {
-        var path = Path.Combine(SnapshotDirectory(id), "manifest.json");
+        ValidateSnapshotId(id);
+        var path = Path.Combine(RetainedDataDirectory, id);
+        PathSafety.EnsureNoLinks(path);
+        return path;
+    }
+
+    internal async Task<SnapshotManifest> ReadManifestAtAsync(string directory, string id, CancellationToken cancellationToken, bool requireComplete = true)
+    {
+        var path = Path.Combine(directory, "manifest.json");
         PathSafety.EnsureNoLinks(path);
         await using var stream = File.OpenRead(path);
         var manifest = await JsonSerializer.DeserializeAsync<SnapshotManifest>(stream, JsonOptions, cancellationToken)

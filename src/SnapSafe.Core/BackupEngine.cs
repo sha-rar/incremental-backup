@@ -4,6 +4,12 @@ namespace SnapSafe.Core;
 
 public sealed class BackupEngine
 {
+    private readonly IDestinationProbe destinationProbe;
+    public BackupEngine(IDestinationProbe? destinationProbe = null) => this.destinationProbe = destinationProbe ?? new DestinationProbe();
+    public Task<RetentionResult> ApplyRetentionAsync(string repository, RetentionPolicy policy,
+        DateTimeOffset? now = null, CancellationToken cancellationToken = default) =>
+        SnapshotRetention.ApplyAsync(repository, policy, now ?? DateTimeOffset.UtcNow, cancellationToken);
+
     public Task<RestoreResult> RestoreAsync(string repository, string snapshotId, string destination,
         RestoreOptions options, CancellationToken cancellationToken = default) =>
         SnapshotRestorer.RestoreAsync(repository, snapshotId, destination, options, cancellationToken);
@@ -30,6 +36,8 @@ public sealed class BackupEngine
         ArgumentNullException.ThrowIfNull(plan);
         cancellationToken.ThrowIfCancellationRequested();
         plan = plan.ValidateForBackup();
+        destinationProbe.EnsureAccessible(plan.DestinationDirectory);
+        destinationProbe.EnsureCapacity(plan.DestinationDirectory, 4096);
         using var repository = new SnapshotRepository(plan.DestinationDirectory, create: true);
         repository.RemoveStaleStaging(cancellationToken);
         var scan = DirectoryScanner.Scan(plan, cancellationToken);
@@ -43,13 +51,20 @@ public sealed class BackupEngine
         {
             var files = new List<SnapshotFile>();
             var copied = 0;
+            long sourceBytes = 0;
+            var manifestReserve = checked(4096L + scan.Files.Count * 512L + scan.Directories.Count * 128L);
             foreach (var file in scan.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await using var input = FileIntegrity.OpenRead(file.FullPath);
                 var length = input.Length;
-                var hash = await FileIntegrity.HashAsync(input, cancellationToken);
-                if (previousFiles.TryGetValue(file.RelativePath, out var old) && old.Length == length && old.Sha256 == hash)
+                previousFiles.TryGetValue(file.RelativePath, out var old);
+                string? hash = null;
+                if (old is not null && old.Length == length)
+                {
+                    hash = await FileIntegrity.HashAsync(input, cancellationToken); sourceBytes += length;
+                }
+                if (old is not null && hash is not null && string.Equals(old.Sha256, hash, StringComparison.OrdinalIgnoreCase))
                 {
                     // Do not propagate a damaged previous copy into another completed snapshot.
                     await FileIntegrity.VerifyAsync(await repository.StoredPathAsync(old, cancellationToken), old, cancellationToken);
@@ -57,9 +72,11 @@ public sealed class BackupEngine
                 }
                 else
                 {
-                    var entry = new SnapshotFile(file.RelativePath, length, hash, id);
-                    await FileIntegrity.CopyVerifiedAsync(input, PathSafety.Resolve(Path.Combine(staging, "files"), file.RelativePath),
-                        entry, cancellationToken);
+                    destinationProbe.EnsureCapacity(plan.DestinationDirectory, checked(length + manifestReserve));
+                    var entry = await FileIntegrity.CopyAndHashAsync(input, PathSafety.Resolve(Path.Combine(staging, "files"), file.RelativePath),
+                        file.RelativePath, id, cancellationToken);
+                    sourceBytes += length;
+                    if (hash is not null && entry.Sha256 != hash) throw new IOException($"Source changed during backup: {file.RelativePath}");
                     files.Add(entry);
                     copied++;
                 }
@@ -73,6 +90,7 @@ public sealed class BackupEngine
                 Exclusions = plan.Exclusions.ToArray()
             };
             SnapshotRepository.ValidateManifest(manifest, id);
+            destinationProbe.EnsureCapacity(plan.DestinationDirectory, manifestReserve);
             await using (var output = new FileStream(Path.Combine(staging, "manifest.json"), FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
             {
@@ -83,8 +101,10 @@ public sealed class BackupEngine
             cancellationToken.ThrowIfCancellationRequested();
             // Same-volume directory rename is the publication boundary. Staging is never restorable.
             Directory.Move(staging, repository.SnapshotDirectory(id));
-            return new BackupResult(manifest, copied, files.Count - copied);
+            return new BackupResult(manifest, copied, files.Count - copied) { SourceBytesRead = sourceBytes };
         }
+        catch (IOException exception) when ((exception.HResult & 0xffff) is 112 or 39)
+        { throw new BackupDestinationException("Backup stopped because the destination ran out of space. Free space and retry; completed snapshots were kept.", exception); }
         finally
         {
             SnapshotRepository.DeleteStaging(staging);
