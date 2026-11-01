@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SnapSafe.Core/SnapSafe.Core.csproj" />
+    <Project Path="src/SnapSafe.Cli/SnapSafe.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SnapSafe.Core.Tests/SnapSafe.Core.Tests.csproj" />
+  </Folder>
+</Solution>
