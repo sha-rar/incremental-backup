@@ -30,10 +30,24 @@ internal static class PathSafety
 
     private static bool Contains(string parent, string child)
     {
-        parent = Path.TrimEndingDirectorySeparator(Path.GetFullPath(parent));
-        child = Path.TrimEndingDirectorySeparator(Path.GetFullPath(child));
+        parent = NormalizeForComparison(parent);
+        child = NormalizeForComparison(child);
         return string.Equals(parent, child, Comparison) || child.StartsWith(Path.EndsInDirectorySeparator(parent)
             ? parent : parent + Path.DirectorySeparatorChar, Comparison);
+    }
+
+    private static string NormalizeForComparison(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (OperatingSystem.IsWindows())
+        {
+            if (fullPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+                fullPath = @"\\" + fullPath[8..];
+            else if (fullPath.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+                fullPath = fullPath[4..];
+            fullPath = Path.GetFullPath(fullPath);
+        }
+        return Path.TrimEndingDirectorySeparator(fullPath);
     }
 
     internal static void EnsureNoLinks(string path)

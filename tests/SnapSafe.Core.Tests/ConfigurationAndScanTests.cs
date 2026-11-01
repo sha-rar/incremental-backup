@@ -69,4 +69,13 @@ public class ConfigurationAndScanTests
         Assert.Throws<DirectoryNotFoundException>(() => DirectoryScanner.Scan(
             new BackupPlan(temp.PathFor("missing"), temp.PathFor("backup"))));
     }
+
+    [Fact]
+    public void ExtendedWindowsPathAliasCannotBypassSourceOverlapCheck()
+    {
+        using var temp = new TestDirectory();
+        var source = temp.CreateDirectory("input");
+        var destination = (OperatingSystem.IsWindows() ? @"\\?\" : "") + Path.Combine(source, "backup");
+        Assert.Throws<ArgumentException>(() => DirectoryScanner.Scan(new BackupPlan(source, destination)));
+    }
 }

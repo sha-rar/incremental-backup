@@ -51,6 +51,7 @@ public sealed class BackupEngine
                 Id = id, CreatedAtUtc = DateTimeOffset.UtcNow, Complete = true,
                 Sources = plan.Sources.ToArray(), Directories = scan.Directories.ToArray(), Files = files.ToArray()
             };
+            SnapshotRepository.ValidateManifest(manifest, id);
             await using (var output = new FileStream(Path.Combine(staging, "manifest.json"), FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous))
             {

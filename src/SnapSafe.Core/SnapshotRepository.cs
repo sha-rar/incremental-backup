@@ -118,7 +118,7 @@ internal sealed class SnapshotRepository : IDisposable
         Directory.Delete(path, recursive: true);
     }
 
-    private static void ValidateManifest(SnapshotManifest manifest, string id)
+    internal static void ValidateManifest(SnapshotManifest manifest, string id)
     {
         if (manifest.FormatVersion != 1 || manifest.Id != id || !manifest.Complete ||
             manifest.Sources is null || manifest.Sources.Length == 0 || manifest.Directories is null || manifest.Files is null)

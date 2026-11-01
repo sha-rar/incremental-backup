@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace SnapSafe.Core.Tests;
@@ -202,6 +203,56 @@ public class BackupEngineTests
         temp.Write("input/file", "data");
         var result = await engine.CreateSnapshotAsync(Plan(temp));
         await Assert.ThrowsAsync<ArgumentException>(() => engine.RestoreAsync(temp.PathFor("backup"), ".pending-" + result.Snapshot.Id, temp.PathFor("restore")));
+    }
+
+    [Theory]
+    [InlineData("Files")]
+    [InlineData("Directories")]
+    [InlineData("FormatVersion")]
+    [InlineData("CreatedAtUtc")]
+    public async Task MissingManifestFieldsAreRejectedInsteadOfRestoringIncompleteData(string field)
+    {
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "data");
+        var result = await engine.CreateSnapshotAsync(Plan(temp));
+        var path = temp.PathFor($"backup/snapshots/{result.Snapshot.Id}/manifest.json");
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(path))!.AsObject();
+        Assert.True(json.Remove(field));
+        await File.WriteAllTextAsync(path, json.ToJsonString());
+        await Assert.ThrowsAsync<JsonException>(() => engine.RestoreAsync(temp.PathFor("backup"), result.Snapshot.Id, temp.PathFor("restore")));
+        Assert.False(Directory.Exists(temp.PathFor("restore")));
+    }
+
+    [Fact]
+    public async Task InvalidEmptyDirectoryNameCannotProduceCompletedSnapshot()
+    {
+        using var temp = new TestDirectory();
+        temp.CreateDirectory("input");
+        // Extended-length Windows paths can create names regular restore paths cannot safely represent.
+        var invalid = (OperatingSystem.IsWindows() ? @"\\?\" : "") + Path.Combine(temp.Root, "input", "bad.");
+        Directory.CreateDirectory(invalid);
+        var plan = new BackupPlan((OperatingSystem.IsWindows() ? @"\\?\" : "") + temp.PathFor("input"), temp.PathFor("backup"));
+        try
+        {
+            Assert.Contains(Directory.GetDirectories(temp.PathFor("input")), path => Path.GetFileName(path) == "bad.");
+            await Assert.ThrowsAsync<ArgumentException>(() => engine.CreateSnapshotAsync(plan));
+            Assert.Empty(Directory.GetDirectories(temp.PathFor("backup/snapshots")));
+        }
+        finally
+        {
+            Directory.Delete(invalid);
+        }
+    }
+
+    [Fact]
+    public async Task ExtendedWindowsPathAliasCannotBypassRestoreOverlapCheck()
+    {
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "data");
+        var result = await engine.CreateSnapshotAsync(Plan(temp));
+        var repository = (OperatingSystem.IsWindows() ? @"\\?\" : "") + temp.PathFor("backup");
+        await Assert.ThrowsAsync<ArgumentException>(() => engine.RestoreAsync(repository, result.Snapshot.Id, temp.PathFor("backup/restored")));
+        Assert.False(Directory.Exists(temp.PathFor("backup/restored")));
     }
 
     private sealed class InlineProgress(Action<BackupProgress> report) : IProgress<BackupProgress>

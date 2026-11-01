@@ -24,6 +24,7 @@ public static class DirectoryScanner
                 foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    PathSafety.ValidateSegment(Path.GetFileName(entry));
                     PathSafety.EnsureNoLinks(entry);
                     if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
                         pending.Push(entry);
