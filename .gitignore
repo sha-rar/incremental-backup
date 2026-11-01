@@ -7,3 +7,5 @@ TestResults/
 *.log
 .env
 .history/
+possible-workflow.md
+.docs/
