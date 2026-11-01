@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using Microsoft.Win32;
 using SnapSafe.Core;
 using SnapSafe.Desktop.Model;
+using SnapSafe.Notifications;
 
 namespace SnapSafe.Desktop;
 
@@ -15,6 +16,11 @@ public partial class MainWindow : Window
     {
         this.workspace = workspace;
         InitializeComponent(); DataContext = workspace;
+        workspace.BackupFinished += entry =>
+        {
+            if (workspace.NotificationsEnabled && (WindowState == WindowState.Minimized || entry.Outcome != "Success"))
+                _ = WindowsNotifications.ShowAsync($"SnapSafe: {entry.JobName}", entry.Message, entry.Outcome != "Success");
+        };
     }
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await workspace.InitializeAsync();
     private async void Window_Closing(object? sender, CancelEventArgs e)
@@ -79,4 +85,5 @@ public partial class MainWindow : Window
     private void ClearSelection_Click(object sender, RoutedEventArgs e) { foreach (var entry in workspace.Entries) entry.IsSelected = false; }
     private async void RestoreSelected_Click(object sender, RoutedEventArgs e) => await workspace.RestoreAsync(all: false);
     private async void RestoreAll_Click(object sender, RoutedEventArgs e) => await workspace.RestoreAsync(all: true);
+    private async void Activity_Click(object sender, RoutedEventArgs e) => await workspace.RefreshActivityAsync();
 }

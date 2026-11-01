@@ -62,10 +62,27 @@ public sealed class SettingsStore(string path)
             if (job.Sources is null || job.Exclusions is null)
                 throw new InvalidDataException("Invalid backup job settings.");
             _ = job.ToPlan();
+            if (job.BackupIntervalMinutes is < 1 or > 525600 || job.RetainSnapshotDays is <= 0 or > 36500 || job.RetainSnapshotCount is <= 0)
+                throw new InvalidDataException("Schedule interval and retention limits must be positive and within the supported range.");
+            job.Retention.Validate();
             if (!Path.IsPathFullyQualified(job.DestinationDirectory) || job.Sources.Any(source => !Path.IsPathFullyQualified(source.Directory)))
                 throw new InvalidDataException("Saved backup directories must use absolute paths.");
         }
+        foreach (var group in settings.Jobs.GroupBy(job => RepositoryKey(job.DestinationDirectory), StringComparer.OrdinalIgnoreCase))
+            if (group.Select(job => job.Retention).Distinct().Count() > 1)
+                throw new InvalidDataException("Jobs sharing a backup destination must use the same retention policy.");
         if (settings.SelectedJobId is { } selected && !ids.Contains(selected))
             throw new InvalidDataException("Selected backup job does not exist.");
+    }
+    private static string RepositoryKey(string directory)
+    {
+        var path = Path.GetFullPath(directory);
+        if (OperatingSystem.IsWindows())
+        {
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)) path = @"\\" + path[8..];
+            else if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)) path = path[4..];
+            path = Path.GetFullPath(path);
+        }
+        return Path.TrimEndingDirectorySeparator(path);
     }
 }

@@ -11,6 +11,11 @@ public sealed record BackupJobSettings
     public string DestinationDirectory { get; init; } = "";
     public string[] Exclusions { get; init; } = [];
     public bool FullBackup { get; init; }
+    public bool AutomaticBackupEnabled { get; init; }
+    public int BackupIntervalMinutes { get; init; } = 360;
+    public int? RetainSnapshotCount { get; init; }
+    public int? RetainSnapshotDays { get; init; }
+    [JsonIgnore] public RetentionPolicy Retention => new(RetainSnapshotCount, RetainSnapshotDays is { } days ? TimeSpan.FromDays(days) : null);
 
     public BackupPlan ToPlan() => new(Sources, DestinationDirectory, Exclusions);
 }
@@ -24,4 +29,5 @@ public sealed record DesktopSettings
     public Guid? SelectedJobId { get; init; }
     public string RestoreDirectory { get; init; } = "";
     public RestoreConflictPolicy ConflictPolicy { get; init; } = RestoreConflictPolicy.Fail;
+    public bool NotificationsEnabled { get; init; } = true;
 }

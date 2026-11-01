@@ -9,5 +9,15 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SnapSafe.Desktop.Model/SnapSafe.Desktop.Model.csproj" />
+    <ProjectReference Include="../SnapSafe.Notifications/SnapSafe.Notifications.csproj" />
+    <ProjectReference Include="../SnapSafe.Worker/SnapSafe.Worker.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="CopyBackupWorker" AfterTargets="Build">
+    <ItemGroup><WorkerFiles Include="../SnapSafe.Worker/bin/$(Configuration)/net10.0-windows/SnapSafe.Worker.*" Exclude="../SnapSafe.Worker/bin/$(Configuration)/net10.0-windows/*.pdb" /></ItemGroup>
+    <Copy SourceFiles="@(WorkerFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishBackupWorker" AfterTargets="Publish">
+    <ItemGroup><PublishedWorkerFiles Include="$(OutDir)SnapSafe.Worker.*" Exclude="$(OutDir)*.pdb" /></ItemGroup>
+    <Copy SourceFiles="@(PublishedWorkerFiles)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

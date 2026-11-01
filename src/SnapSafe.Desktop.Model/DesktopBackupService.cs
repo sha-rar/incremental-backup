@@ -19,12 +19,13 @@ public sealed class DesktopBackupService : IDesktopBackupService
     public Task<BackupPlan> ValidateAsync(BackupPlan plan, CancellationToken token) => Task.Run(plan.ValidateForBackup, token);
     public Task<RepositoryOverview> OverviewAsync(string repository, CancellationToken token) => Task.Run(async () =>
     {
+        new DestinationProbe().EnsureAccessible(repository);
         if (!Directory.Exists(Path.Combine(repository, "snapshots")))
             return new RepositoryOverview([], 0);
         var snapshots = await engine.ListSnapshotsAsync(repository, token);
         long bytes = 0;
         var options = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint, IgnoreInaccessible = false };
-        foreach (var path in Directory.EnumerateFiles(Path.Combine(repository, "snapshots"), "*", options))
+        foreach (var path in Directory.EnumerateFiles(repository, "*", options))
         {
             token.ThrowIfCancellationRequested();
             bytes = checked(bytes + new FileInfo(path).Length);

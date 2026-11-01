@@ -41,6 +41,16 @@ public sealed class DesktopWorkspace : ObservableObject
 {
     private readonly SettingsStore store;
     private readonly IDesktopBackupService service;
+    private readonly IAutomationRegistration? registration;
+    private readonly JobLogStore logs;
+    private readonly BackupJobRunner jobRunner;
+    private bool notifications = true;
+    private string automationStatus = "Automatic backups are off.";
+    private bool pendingTaskRemoval;
+    public bool NotificationsEnabled { get => notifications; set => Set(ref notifications, value); }
+    public string AutomationStatus { get => automationStatus; private set => Set(ref automationStatus, value); }
+    public ObservableCollection<JobLogEntry> Activity { get; } = [];
+    public event Action<JobLogEntry>? BackupFinished;
     private CancellationTokenSource? operation;
     private TaskCompletionSource? completion;
     private bool busy, settingsFailed, initialized;
@@ -69,9 +79,12 @@ public sealed class DesktopWorkspace : ObservableObject
     public string ProgressText { get => progress; private set => Set(ref progress, value); }
     public string JobCountText => $"{Jobs.Count} configured {(Jobs.Count == 1 ? "job" : "jobs")}";
 
-    public DesktopWorkspace(SettingsStore store, IDesktopBackupService service)
+    public DesktopWorkspace(SettingsStore store, IDesktopBackupService service, IAutomationRegistration? registration = null)
     {
         this.store = store; this.service = service;
+        this.registration = registration;
+        logs = new JobLogStore(Path.Combine(Path.GetDirectoryName(store.FilePath)!, "logs"));
+        jobRunner = new BackupJobRunner(service, logs);
         Editor.PropertyChanged += (_, _) => StateChanged();
     }
     private void StateChanged()
@@ -81,7 +94,7 @@ public sealed class DesktopWorkspace : ObservableObject
     private DesktopSettings Settings(IEnumerable<BackupJobSettings>? jobs = null, Guid? selected = null) => new()
     {
         Jobs = (jobs ?? Jobs.Select(job => job.Settings)).ToArray(), SelectedJobId = selected ?? SelectedJob?.Settings.Id,
-        RestoreDirectory = RestoreDirectory, ConflictPolicy = ConflictPolicy
+        RestoreDirectory = RestoreDirectory, ConflictPolicy = ConflictPolicy, NotificationsEnabled = NotificationsEnabled
     };
     private void SelectDirect(JobCard? job)
     {
@@ -105,10 +118,12 @@ public sealed class DesktopWorkspace : ObservableObject
         Jobs.Clear();
         foreach (var job in settings.Jobs) Jobs.Add(new JobCard(job));
         RestoreDirectory = settings.RestoreDirectory; ConflictPolicy = settings.ConflictPolicy;
+        NotificationsEnabled = settings.NotificationsEnabled;
         SelectDirect(Jobs.FirstOrDefault(job => job.Settings.Id == settings.SelectedJobId) ?? Jobs.FirstOrDefault());
         initialized = true;
         await RefreshCardsAsync(token);
         await LoadHistoryAsync(token);
+        await ConfigureAutomationAsync(false, token); await ReadActivityAsync(token);
         StatusMessage = Jobs.Count == 0 ? "Add your first backup job to get started." : "Ready";
     });
     public void NewJob()
@@ -128,6 +143,7 @@ public sealed class DesktopWorkspace : ObservableObject
         return RunAsync("Saving job…", async token =>
         {
             var candidate = Editor.ToSettings(SelectedJob?.Settings.Id ?? Guid.NewGuid());
+            var previouslyEnabled = Jobs.Any(job => job.Settings.AutomaticBackupEnabled);
             var plan = await service.ValidateAsync(candidate.ToPlan(), token);
             candidate = candidate with { Sources = plan.Sources.ToArray(), DestinationDirectory = plan.DestinationDirectory };
             var jobs = Jobs.Select(job => job.Settings).Where(job => job.Id != candidate.Id).Append(candidate).ToArray();
@@ -136,6 +152,7 @@ public sealed class DesktopWorkspace : ObservableObject
             var existing = Jobs.FirstOrDefault(job => job.Settings.Id == candidate.Id);
             if (existing is null) Jobs.Add(card); else Jobs[Jobs.IndexOf(existing)] = card;
             SelectDirect(card);
+            await ConfigureAutomationAsync(previouslyEnabled, token);
             await RefreshCardAsync(card, token); await LoadHistoryAsync(token);
             StatusMessage = "Backup job saved.";
         });
@@ -150,6 +167,7 @@ public sealed class DesktopWorkspace : ObservableObject
             await store.SaveAsync(Settings(remaining.Select(job => job.Settings), remaining.FirstOrDefault()?.Settings.Id) with
                 { SelectedJobId = remaining.FirstOrDefault()?.Settings.Id }, token);
             Jobs.Remove(removed); SelectDirect(remaining.FirstOrDefault());
+            await ConfigureAutomationAsync(removed.Settings.AutomaticBackupEnabled, token);
             await LoadHistoryAsync(token); StatusMessage = "Job removed. Its backup snapshots were kept.";
         });
     }
@@ -173,7 +191,7 @@ public sealed class DesktopWorkspace : ObservableObject
     public Task RefreshAsync()
     {
         if (!CanChooseJob) return Task.CompletedTask;
-        return RunAsync("Refreshing repositories…", async token => { await RefreshCardsAsync(token); await LoadHistoryAsync(token); StatusMessage = "Repositories refreshed."; });
+        return RunAsync("Refreshing repositories…", async token => { await RefreshCardsAsync(token); await LoadHistoryAsync(token); await ConfigureAutomationAsync(false, token); await ReadActivityAsync(token); StatusMessage = "Repositories refreshed."; });
     }
     private async Task RefreshCardsAsync(CancellationToken token)
     {
@@ -226,11 +244,20 @@ public sealed class DesktopWorkspace : ObservableObject
             });
             try
             {
-                var result = await service.BackupAsync(job.Settings.ToPlan(), job.Settings.FullBackup, progress, token);
+                var run = await jobRunner.RunAsync(job.Settings, progress, token);
+                var result = run.Backup;
                 await RefreshCardAsync(job, token); await LoadHistoryAsync(token);
                 StatusMessage = $"Backup complete: {result.CopiedFiles} copied, {result.ReusedFiles} reused.";
+                if (run.Warnings.Count > 0) ErrorMessage = string.Join(Environment.NewLine, run.Warnings);
+                BackupFinished?.Invoke(run.Log);
             }
-            catch { job.Status = token.IsCancellationRequested ? "Cancelled" : "Backup failed"; throw; }
+            catch (Exception exception)
+            {
+                job.Status = token.IsCancellationRequested ? "Cancelled" : "Backup failed";
+                if (!token.IsCancellationRequested) BackupFinished?.Invoke(new(DateTimeOffset.UtcNow, job.Settings.Id, job.Name, "Failed", exception.Message, 0));
+                throw;
+            }
+            finally { await ReadActivityAsync(CancellationToken.None); }
         });
     }
     public Task RestoreAsync(bool all)
@@ -254,6 +281,31 @@ public sealed class DesktopWorkspace : ObservableObject
         return initialized && !settingsFailed ? store.SaveAsync(Settings()) : Task.CompletedTask;
     }
     public void Cancel() => operation?.Cancel();
+    public Task RefreshActivityAsync() => CanChooseJob ? RunAsync("Loading activity…", async token => { await ReadActivityAsync(token); StatusMessage = "Activity loaded."; }) : Task.CompletedTask;
+    private async Task ReadActivityAsync(CancellationToken token)
+    {
+        try
+        {
+            var entries = await Task.Run(() => logs.ReadRecentAsync(token), token);
+            Activity.Clear(); foreach (var entry in entries) Activity.Add(entry);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception) { ErrorMessage = $"Activity log unavailable: {exception.Message}"; }
+    }
+    private async Task ConfigureAutomationAsync(bool previouslyEnabled, CancellationToken token)
+    {
+        var enabled = Jobs.Any(job => job.Settings.AutomaticBackupEnabled);
+        if (registration is null) return;
+        if (!enabled && !previouslyEnabled && !pendingTaskRemoval) { AutomationStatus = "Automatic backups are off."; return; }
+        try
+        {
+            await registration.SetEnabledAsync(enabled, store.FilePath, token);
+            pendingTaskRemoval = false;
+            AutomationStatus = enabled ? "Automatic backups run while you are logged in, even with SnapSafe closed." : "Automatic backups are off.";
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception) { pendingTaskRemoval = !enabled; AutomationStatus = "Automatic execution could not be configured. Refresh to retry."; ErrorMessage = $"Job settings saved, but task setup failed: {exception.Message}"; }
+    }
     public Task WaitForIdleAsync() => completion?.Task ?? Task.CompletedTask;
     private async Task RunAsync(string message, Func<CancellationToken, Task> action)
     {

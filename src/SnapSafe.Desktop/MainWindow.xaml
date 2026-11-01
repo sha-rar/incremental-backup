@@ -78,6 +78,16 @@
                         <TextBox Text="{Binding Editor.ExclusionsText, UpdateSourceTrigger=PropertyChanged}" Height="65" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Exclusions" />
                         <TextBlock Text="Examples: *.tmp or **/bin/**. Named source folders appear at the top level when restoring." Foreground="#5F7180" Margin="0,5,0,10" />
                         <CheckBox Content="Make a full copy each time (otherwise reuse unchanged files)" IsChecked="{Binding Editor.FullBackup}" Margin="0,2,0,16" />
+                        <CheckBox Content="Run this job automatically while I am logged in, even with SnapSafe closed" IsChecked="{Binding Editor.AutomaticBackupEnabled}" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><TextBlock Text="Run every (minutes)" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <TextBox Text="{Binding Editor.IntervalMinutesText, UpdateSourceTrigger=PropertyChanged}" Width="100" AutomationProperties.Name="Backup interval minutes" /></StackPanel>
+                        <TextBlock Text="Retention for this destination (all jobs sharing it)" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="Keep at most" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox Text="{Binding Editor.RetainCountText, UpdateSourceTrigger=PropertyChanged}" Width="80" AutomationProperties.Name="Retained snapshot count" />
+                            <TextBlock Text="snapshots, and no older than" VerticalAlignment="Center" Margin="10,0" />
+                            <TextBox Text="{Binding Editor.RetainDaysText, UpdateSourceTrigger=PropertyChanged}" Width="80" AutomationProperties.Name="Retained snapshot age days" /><TextBlock Text="days" VerticalAlignment="Center" Margin="8,0" /></StackPanel>
+                        <TextBlock Text="Blank limits keep all history. The newest snapshot is always kept. Shared file data is preserved safely." Foreground="#5F7180" Margin="0,6,0,12" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding AutomationStatus}" Foreground="#5F7180" Margin="0,0,0,12" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal"><Button Content="Save job" Style="{StaticResource PrimaryButton}" Click="SaveJob_Click" IsEnabled="{Binding CanSave}" />
                             <Button Content="Discard edits" Click="Discard_Click" /><Button Content="Remove job" Click="RemoveJob_Click" IsEnabled="{Binding CanRun}" /></StackPanel>
                         <TextBlock Text="Removing a job keeps its existing backup snapshots." Foreground="#5F7180" Margin="0,8,0,12" />
@@ -115,6 +125,20 @@
                             <Button Content="Restore entire snapshot" Click="RestoreAll_Click" IsEnabled="{Binding CanRestore}" /></StackPanel>
                     </StackPanel>
                 </Grid>
+            </TabItem>
+            <TabItem Header="Activity">
+                <DockPanel Margin="0,20,0,0">
+                    <StackPanel DockPanel.Dock="Top"><TextBlock Text="Backup activity" Style="{StaticResource SectionTitle}" />
+                        <TextBlock Text="Recent manual and scheduled job outcomes. Scheduled failures are retried automatically; details remain here." Style="{StaticResource Caption}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12"><Button Content="Refresh activity" Click="Activity_Click" IsEnabled="{Binding CanChooseJob}" />
+                            <CheckBox Content="Show desktop backup notifications" IsChecked="{Binding NotificationsEnabled}" VerticalAlignment="Center" IsEnabled="{Binding CanEdit}" /></StackPanel></StackPanel>
+                    <DataGrid ItemsSource="{Binding Activity}" IsReadOnly="True"><DataGrid.Columns>
+                        <DataGridTextColumn Header="Time (UTC)" Binding="{Binding TimestampUtc, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="165" />
+                        <DataGridTextColumn Header="Job" Binding="{Binding JobName}" Width="160" />
+                        <DataGridTextColumn Header="Outcome" Binding="{Binding Outcome}" Width="90" />
+                        <DataGridTextColumn Header="Details" Binding="{Binding Message}" Width="*" />
+                    </DataGrid.Columns></DataGrid>
+                </DockPanel>
             </TabItem>
         </TabControl>
     </DockPanel>

@@ -15,6 +15,12 @@ public sealed class JobEditor : ObservableObject
 {
     private string name = "New backup", destination = "", exclusions = "";
     private bool fullBackup, dirty;
+    private bool automatic;
+    private string interval = "360", retainCount = "", retainDays = "";
+    public bool AutomaticBackupEnabled { get => automatic; set { if (Set(ref automatic, value)) MarkDirty(); } }
+    public string IntervalMinutesText { get => interval; set { if (Set(ref interval, value)) MarkDirty(); } }
+    public string RetainCountText { get => retainCount; set { if (Set(ref retainCount, value)) MarkDirty(); } }
+    public string RetainDaysText { get => retainDays; set { if (Set(ref retainDays, value)) MarkDirty(); } }
     public ObservableCollection<SourceEditor> Sources { get; } = [];
     public string Name { get => name; set { if (Set(ref name, value)) MarkDirty(); } }
     public string DestinationDirectory { get => destination; set { if (Set(ref destination, value)) MarkDirty(); } }
@@ -42,6 +48,10 @@ public sealed class JobEditor : ObservableObject
         DestinationDirectory = job?.DestinationDirectory ?? "";
         ExclusionsText = string.Join(Environment.NewLine, job?.Exclusions ?? []);
         FullBackup = job?.FullBackup ?? false;
+        AutomaticBackupEnabled = job?.AutomaticBackupEnabled ?? false;
+        IntervalMinutesText = (job?.BackupIntervalMinutes ?? 360).ToString();
+        RetainCountText = job?.RetainSnapshotCount?.ToString() ?? "";
+        RetainDaysText = job?.RetainSnapshotDays?.ToString() ?? "";
         foreach (var source in Sources) source.PropertyChanged -= SourceChanged;
         Sources.Clear();
         foreach (var source in job?.Sources ?? []) Sources.Add(new SourceEditor(source.Name, source.Directory));
@@ -63,9 +73,17 @@ public sealed class JobEditor : ObservableObject
     public BackupJobSettings ToSettings(Guid id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(Name);
+        if (!int.TryParse(IntervalMinutesText, out var minutes) || minutes is < 1 or > 525600) throw new ArgumentException("Backup interval must be between 1 and 525600 minutes.");
+        int? ParseLimit(string value, string label)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            if (!int.TryParse(value, out var limit) || limit < 1) throw new ArgumentException($"{label} must be a positive whole number or blank.");
+            return limit;
+        }
         var plan = new BackupPlan(Sources.Select(source => new BackupSource(source.Name.Trim(), Path.GetFullPath(source.Directory))),
             Path.GetFullPath(DestinationDirectory), ExclusionsText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         return new BackupJobSettings { Id = id, Name = Name.Trim(), Sources = plan.Sources.ToArray(), DestinationDirectory = plan.DestinationDirectory,
-            Exclusions = plan.Exclusions.ToArray(), FullBackup = FullBackup };
+            Exclusions = plan.Exclusions.ToArray(), FullBackup = FullBackup, AutomaticBackupEnabled = AutomaticBackupEnabled,
+            BackupIntervalMinutes = minutes, RetainSnapshotCount = ParseLimit(RetainCountText, "Snapshot count"), RetainSnapshotDays = ParseLimit(RetainDaysText, "Snapshot age") };
     }
 }

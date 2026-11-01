@@ -4,9 +4,12 @@
     <Project Path="src/SnapSafe.Cli/SnapSafe.Cli.csproj" />
     <Project Path="src/SnapSafe.Desktop.Model/SnapSafe.Desktop.Model.csproj" />
     <Project Path="src/SnapSafe.Desktop/SnapSafe.Desktop.csproj" />
+    <Project Path="src/SnapSafe.Worker/SnapSafe.Worker.csproj" />
+    <Project Path="src/SnapSafe.Notifications/SnapSafe.Notifications.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SnapSafe.Core.Tests/SnapSafe.Core.Tests.csproj" />
     <Project Path="tests/SnapSafe.Desktop.Tests/SnapSafe.Desktop.Tests.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/"><Project Path="benchmarks/SnapSafe.Benchmarks/SnapSafe.Benchmarks.csproj" /></Folder>
 </Solution>

@@ -19,7 +19,8 @@ public partial class App : Application
             }
             settingsPath = Path.GetFullPath(e.Args[1]);
         }
-        var workspace = new DesktopWorkspace(new SettingsStore(settingsPath), new DesktopBackupService());
+        var workspace = new DesktopWorkspace(new SettingsStore(settingsPath), new DesktopBackupService(),
+            new TaskSchedulerRegistration(Path.Combine(AppContext.BaseDirectory, "SnapSafe.Worker.exe")));
         MainWindow = new MainWindow(workspace);
         MainWindow.Show();
     }
