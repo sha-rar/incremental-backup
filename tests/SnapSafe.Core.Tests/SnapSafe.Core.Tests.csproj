@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SnapSafe.Core/SnapSafe.Core.csproj" />
+    <ProjectReference Include="../../src/SnapSafe.Cli/SnapSafe.Cli.csproj" />
   </ItemGroup>
 </Project>

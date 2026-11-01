@@ -1,2 +1,10 @@
-Console.WriteLine("SnapSafe scaffold ready.");
-Console.WriteLine("TODO: implement backup, verify, restore, and scheduling commands.");
+using SnapSafe.Cli;
+
+using var cancellation = new CancellationTokenSource();
+Console.CancelKeyPress += (_, eventArgs) =>
+{
+    eventArgs.Cancel = true;
+    cancellation.Cancel();
+};
+
+return await CliApplication.RunAsync(args, Console.Out, Console.Error, cancellation.Token);
