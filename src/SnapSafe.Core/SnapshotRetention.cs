@@ -11,12 +11,27 @@ internal static class SnapshotRetention
         var survivors = snapshots.Where((snapshot, index) => index == 0 ||
             (index < (policy.MaximumSnapshots ?? int.MaxValue) && (!policy.MaximumAge.HasValue || now - snapshot.CreatedAtUtc <= policy.MaximumAge.Value))).ToArray();
         var kept = survivors.Select(snapshot => snapshot.Id).ToHashSet(StringComparer.Ordinal);
-        var references = survivors.SelectMany(snapshot => snapshot.Files).DistinctBy(file => (file.StorageSnapshotId, file.RelativePath)).ToArray();
+        var references = survivors.SelectMany(snapshot => snapshot.Files).DistinctBy(file => (file.StorageSnapshotId, file.RelativePath, file.Length, file.Sha256)).ToArray();
         // Complete all validation before the first destructive action. Direct owners are never rewritten.
         foreach (var file in references)
             await FileIntegrity.VerifyAsync(await store.StoredPathAsync(file, token), file, token);
         var needed = references.GroupBy(file => file.StorageSnapshotId).ToDictionary(group => group.Key,
             group => group.Select(file => file.RelativePath).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+        // Preflight every tree that may be mutated, including archives not referenced by survivors.
+        foreach (var snapshot in snapshots)
+        {
+            _ = EnumerateSafeFiles(store.SnapshotDirectory(snapshot.Id), token).Count();
+            if (Directory.Exists(store.RetainedDirectory(snapshot.Id))) throw new InvalidDataException("Duplicate active and archived snapshot identifiers.");
+        }
+        if (Directory.Exists(store.RetainedDataDirectory))
+            foreach (var archive in Directory.EnumerateDirectories(store.RetainedDataDirectory))
+            {
+                _ = EnumerateSafeFiles(archive, token).Count();
+                var archiveId = Path.GetFileName(archive);
+                if (Guid.TryParseExact(archiveId, "N", out _)) _ = await store.ReadManifestAtAsync(archive, archiveId, token);
+            }
+        foreach (var trash in Directory.EnumerateDirectories(store.SnapshotsDirectory, ".retention-trash-*"))
+            _ = EnumerateSafeFiles(trash, token).Count();
         long reclaimed = 0;
         foreach (var root in new[] { store.SnapshotsDirectory, store.RetainedDataDirectory })
             if (Directory.Exists(root))

@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
 namespace SnapSafe.Core;
 
 public sealed class BackupDestinationException(string message, Exception? inner = null) : IOException(message, inner);
@@ -32,13 +35,22 @@ public sealed class DestinationProbe : IDestinationProbe
     {
         try
         {
-            var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(destination))!);
-            if (!drive.IsReady) throw new BackupDestinationException($"Backup drive is not ready: {drive.Name}");
-            var free = drive.AvailableFreeSpace;
+            ArgumentOutOfRangeException.ThrowIfNegative(requiredBytes);
+            var root = Path.GetPathRoot(Path.GetFullPath(destination))!;
+            long free;
+            if (OperatingSystem.IsWindows())
+            {
+                if (!GetDiskFreeSpaceEx(root, out var available, out _, out _)) throw new IOException(new Win32Exception(Marshal.GetLastWin32Error()).Message);
+                free = (long)Math.Min(available, (ulong)long.MaxValue);
+            }
+            else free = new DriveInfo(root).AvailableFreeSpace;
             if (free < requiredBytes) throw new BackupDestinationException($"Insufficient space at {destination}: need at least {requiredBytes:N0} bytes; {free:N0} bytes available.");
         }
         catch (BackupDestinationException) { throw; }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         { throw new BackupDestinationException($"Cannot check backup destination capacity: {destination}. {exception.Message}", exception); }
     }
+    [DllImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDiskFreeSpaceEx(string directory, out ulong availableToCaller, out ulong totalBytes, out ulong totalFreeBytes);
 }

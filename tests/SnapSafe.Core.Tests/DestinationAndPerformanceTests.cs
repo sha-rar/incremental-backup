@@ -5,6 +5,15 @@ namespace SnapSafe.Core.Tests;
 public class DestinationAndPerformanceTests
 {
     [Fact]
+    public void CapacityCheckSupportsExtendedWindowsPaths()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var temp = new TestDirectory();
+        var destination = @"\\?\" + temp.Root;
+        new DestinationProbe().EnsureAccessible(destination);
+        new DestinationProbe().EnsureCapacity(destination, 1);
+    }
+    [Fact]
     public async Task InitialAndFullBackupsReadEachSourceOnceAndStillRestoreIdentically()
     {
         using var temp = new TestDirectory();

@@ -99,4 +99,49 @@ public class RetentionTests
         await Assert.ThrowsAsync<ArgumentException>(() => engine.ApplyRetentionAsync(temp.PathFor("backup"), new(0)));
         Assert.Single(await engine.ListSnapshotsAsync(temp.PathFor("backup")));
     }
+
+    [Fact]
+    public async Task ConflictingMetadataInAnySurvivorAbortsBeforeRemovingHistory()
+    {
+        using var temp = new TestDirectory(); temp.Write("input/file", "data");
+        await engine.CreateSnapshotAsync(Plan(temp));
+        var second = await engine.CreateSnapshotAsync(Plan(temp));
+        await engine.CreateSnapshotAsync(Plan(temp));
+        var corrupt = second.Snapshot with { Files = [second.Snapshot.Files[0] with { Sha256 = new string('0', 64) }] };
+        temp.Write($"backup/snapshots/{second.Snapshot.Id}/manifest.json", JsonSerializer.Serialize(corrupt));
+        await Assert.ThrowsAsync<InvalidDataException>(() => engine.ApplyRetentionAsync(temp.PathFor("backup"), new(2)));
+        Assert.Equal(3, (await engine.ListSnapshotsAsync(temp.PathFor("backup"))).Count);
+    }
+
+    [Fact]
+    public async Task RetryAfterInterruptedArchiveMoveAndDeletionStagingKeepsReferencesValid()
+    {
+        using var temp = new TestDirectory(); temp.Write("input/shared", "keep"); temp.Write("input/deleted", "discard");
+        var first = await engine.CreateSnapshotAsync(Plan(temp));
+        File.Delete(temp.PathFor("input/deleted"));
+        var second = await engine.CreateSnapshotAsync(Plan(temp));
+        temp.CreateDirectory("backup/retained-data");
+        Directory.Move(temp.PathFor($"backup/snapshots/{first.Snapshot.Id}"), temp.PathFor($"backup/retained-data/{first.Snapshot.Id}"));
+        var trash = $"backup/snapshots/.retention-trash-{Guid.NewGuid():N}";
+        temp.Write(trash + "/partial", "retired");
+        await engine.ApplyRetentionAsync(temp.PathFor("backup"), new(1));
+        Assert.False(Directory.Exists(temp.PathFor(trash)));
+        Assert.False(File.Exists(temp.PathFor($"backup/retained-data/{first.Snapshot.Id}/files/source/deleted")));
+        await engine.RestoreAsync(temp.PathFor("backup"), second.Snapshot.Id, temp.PathFor("restored"));
+        Assert.Equal("keep", await File.ReadAllTextAsync(temp.PathFor("restored/source/shared")));
+    }
+
+    [Fact]
+    public async Task CorruptArchivedMetadataAbortsBeforeDeletingOtherHistory()
+    {
+        using var temp = new TestDirectory(); temp.Write("input/file", "one");
+        var first = await engine.CreateSnapshotAsync(Plan(temp));
+        await engine.CreateSnapshotAsync(Plan(temp));
+        await engine.ApplyRetentionAsync(temp.PathFor("backup"), new(1));
+        temp.Write("input/file", "two"); await engine.CreateSnapshotAsync(Plan(temp));
+        temp.Write("input/file", "three"); await engine.CreateSnapshotAsync(Plan(temp));
+        temp.Write($"backup/retained-data/{first.Snapshot.Id}/manifest.json", "{broken");
+        await Assert.ThrowsAsync<JsonException>(() => engine.ApplyRetentionAsync(temp.PathFor("backup"), new(1)));
+        Assert.Equal(3, (await engine.ListSnapshotsAsync(temp.PathFor("backup"))).Count);
+    }
 }
