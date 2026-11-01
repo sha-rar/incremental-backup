@@ -28,6 +28,16 @@ internal static class PathSafety
 
     internal static bool Overlaps(string first, string second) => Contains(first, second) || Contains(second, first);
 
+    internal static string DirectoryPath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(fullPath)!;
+        foreach (var segment in fullPath[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+            ValidateSegment(segment);
+        return fullPath;
+    }
+
     private static bool Contains(string parent, string child)
     {
         parent = NormalizeForComparison(parent);

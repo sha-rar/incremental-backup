@@ -49,7 +49,8 @@ public sealed class BackupEngine
             var manifest = new SnapshotManifest
             {
                 Id = id, CreatedAtUtc = DateTimeOffset.UtcNow, Complete = true,
-                Sources = plan.Sources.ToArray(), Directories = scan.Directories.ToArray(), Files = files.ToArray()
+                Sources = plan.Sources.ToArray(), Directories = scan.Directories.ToArray(), Files = files.ToArray(),
+                Exclusions = plan.Exclusions.ToArray()
             };
             SnapshotRepository.ValidateManifest(manifest, id);
             await using (var output = new FileStream(Path.Combine(staging, "manifest.json"), FileMode.CreateNew,

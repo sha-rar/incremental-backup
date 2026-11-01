@@ -23,6 +23,7 @@ public sealed record SnapshotManifest
     public string[] Directories { get; init; } = [];
     [JsonRequired]
     public SnapshotFile[] Files { get; init; } = [];
+    public string[] Exclusions { get; init; } = [];
 }
 
 public sealed record BackupProgress(string RelativePath, int ProcessedFiles, int CopiedFiles);

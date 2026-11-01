@@ -11,6 +11,7 @@ public static class DirectoryScanner
         plan = plan.ValidateForBackup();
         var directories = new List<string>();
         var files = new List<ScannedFile>();
+        var exclusions = new ExclusionMatcher(plan.Exclusions);
         foreach (var source in plan.Sources)
         {
             var pending = new Stack<string>();
@@ -24,13 +25,15 @@ public static class DirectoryScanner
                 foreach (var entry in System.IO.Directory.EnumerateFileSystemEntries(directory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    relative = source.Name + "/" + Path.GetRelativePath(source.Directory, entry).Replace('\\', '/');
+                    if (exclusions.IsExcluded(relative))
+                        continue;
                     PathSafety.ValidateSegment(Path.GetFileName(entry));
                     PathSafety.EnsureNoLinks(entry);
                     if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
                         pending.Push(entry);
                     else
                     {
-                        relative = source.Name + "/" + Path.GetRelativePath(source.Directory, entry).Replace('\\', '/');
                         _ = PathSafety.Resolve(plan.DestinationDirectory, relative);
                         files.Add(new ScannedFile(relative, entry));
                     }

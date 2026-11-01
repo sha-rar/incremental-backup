@@ -10,11 +10,12 @@ public sealed record BackupPlan
     public IReadOnlyList<BackupSource> Sources { get; }
     public string SourceDirectory => Sources[0].Directory;
     public string DestinationDirectory { get; }
+    public IReadOnlyList<string> Exclusions { get; }
 
-    public BackupPlan(string sourceDirectory, string destinationDirectory)
-        : this([new BackupSource("source", sourceDirectory)], destinationDirectory) { }
+    public BackupPlan(string sourceDirectory, string destinationDirectory, IEnumerable<string>? exclusions = null)
+        : this([new BackupSource("source", sourceDirectory)], destinationDirectory, exclusions) { }
 
-    public BackupPlan(IEnumerable<BackupSource> sources, string destinationDirectory)
+    public BackupPlan(IEnumerable<BackupSource> sources, string destinationDirectory, IEnumerable<string>? exclusions = null)
     {
         ArgumentNullException.ThrowIfNull(sources);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationDirectory);
@@ -33,6 +34,7 @@ public sealed record BackupPlan
         }
         Sources = Array.AsReadOnly(items);
         DestinationDirectory = destinationDirectory;
+        Exclusions = Array.AsReadOnly((exclusions ?? []).Select(ExclusionMatcher.Normalize).ToArray());
     }
 
     public static async Task<BackupPlan> LoadAsync(string configurationPath, CancellationToken cancellationToken = default)
@@ -42,17 +44,17 @@ public sealed record BackupPlan
         var config = await JsonSerializer.DeserializeAsync<Configuration>(stream,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, cancellationToken)
             ?? throw new InvalidDataException("Configuration must be a JSON object.");
-        var plan = new BackupPlan(config.Sources ?? [], config.DestinationDirectory ?? "");
+        var plan = new BackupPlan(config.Sources ?? [], config.DestinationDirectory ?? "", config.Exclusions);
         var basePath = Path.GetDirectoryName(fullPath)!;
         return new BackupPlan(plan.Sources.Select(s => s with { Directory = Path.GetFullPath(s.Directory, basePath) }),
-            Path.GetFullPath(plan.DestinationDirectory, basePath));
+            Path.GetFullPath(plan.DestinationDirectory, basePath), plan.Exclusions);
     }
 
     internal BackupPlan ValidateForBackup()
     {
-        var destination = Path.GetFullPath(DestinationDirectory);
+        var destination = PathSafety.DirectoryPath(DestinationDirectory);
         PathSafety.EnsureNoLinks(destination);
-        var normalized = Sources.Select(s => s with { Directory = Path.GetFullPath(s.Directory) }).ToArray();
+        var normalized = Sources.Select(s => s with { Directory = PathSafety.DirectoryPath(s.Directory) }).ToArray();
         foreach (var source in normalized)
         {
             if (!System.IO.Directory.Exists(source.Directory))
@@ -61,8 +63,8 @@ public sealed record BackupPlan
             if (PathSafety.Overlaps(source.Directory, destination))
                 throw new ArgumentException("Sources and backup destination must not overlap.");
         }
-        return new BackupPlan(normalized, destination);
+        return new BackupPlan(normalized, destination, Exclusions);
     }
 
-    private sealed record Configuration(BackupSource[]? Sources, string? DestinationDirectory);
+    private sealed record Configuration(BackupSource[]? Sources, string? DestinationDirectory, string[]? Exclusions);
 }
