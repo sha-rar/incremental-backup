@@ -4,7 +4,9 @@ SnapSafe (a working name) is a Windows desktop app for backing up folders and re
 
 The first backup copies your files. Later backups copy new or changed files and reuse unchanged ones to save space. Each successful backup creates a **snapshot**: a version you can browse and restore, including files you have since changed or deleted.
 
-The app is under development. There is no installer yet; you currently run it from this repository.
+> **Experimental alpha.** SnapSafe is early software and has not been widely tested. Do not rely on it as your only copy of important files; keep another backup until it matures.
+
+There is no installer yet; you currently run it from this repository.
 
 ## Get started
 
@@ -94,6 +96,7 @@ Job settings are saved in `%LOCALAPPDATA%\SnapSafe\settings.json`; backup logs a
 - Symbolic links and junctions are rejected. Locked or inaccessible files can cause a backup to fail; check the error and retry after closing the application using them.
 - Backups are not an instant capture of an entire running system. Close applications that are actively changing important files before backing them up.
 - Backups are not encrypted or compressed. Protect access to the destination as you would your original files.
+- Browsing history and restoring files work from read-only backup storage, such as a write-protected drive. Creating backups and cleaning up old snapshots require write access.
 
 ## Command-line use
 
@@ -102,3 +105,20 @@ A command-line interface is also available for creating backups, listing and ins
 ```powershell
 dotnet run --project src/SnapSafe.Cli -- --help
 ```
+
+## Build and test
+
+To run the same checks as continuous integration:
+
+```powershell
+dotnet restore SnapSafe.slnx
+dotnet build SnapSafe.slnx --configuration Release --no-restore
+dotnet test SnapSafe.slnx --configuration Release --no-build
+dotnet list SnapSafe.slnx package --vulnerable --include-transitive
+```
+
+Each pull request and push to `main` runs these checks on Windows using GitHub Actions.
+
+## License
+
+SnapSafe is released under the [MIT License](LICENSE).
