@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SnapSafe.slnx
+
+      - name: Build
+        run: dotnet build SnapSafe.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test SnapSafe.slnx --configuration Release --no-build
+
+      - name: Audit dependencies
+        shell: pwsh
+        run: |
+          $output = dotnet list SnapSafe.slnx package --vulnerable --include-transitive 2>&1 | Out-String
+          Write-Output $output
+          if ($LASTEXITCODE -ne 0) { throw "Dependency audit could not complete." }
+          if ($output -match 'has the following vulnerable packages') { throw "Vulnerable packages were found." }
