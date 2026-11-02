@@ -79,21 +79,37 @@ public class AutomationTests
         Assert.Contains(entry, await logs.ReadRecentAsync());
     }
 
-    [Fact]
-    public async Task SharedDestinationsCannotHaveConflictingRetentionPolicies()
+    [Theory]
+    [InlineData("backup")]
+    [InlineData("BACKUP")]
+    [InlineData("backup/nested")]
+    public async Task JobsCannotShareOrNestBackupDestinations(string destination)
     {
         using var temp = new TestFolder(); var job = Job(temp);
         await Assert.ThrowsAsync<InvalidDataException>(() => new SettingsStore(temp.At("settings.json")).SaveAsync(new DesktopSettings
-        { Jobs = [job, job with { Id = Guid.NewGuid(), RetainSnapshotCount = 5 }] }));
+        { Jobs = [job, job with { Id = Guid.NewGuid(), DestinationDirectory = temp.At(destination) }] }));
     }
 
     [Fact]
-    public async Task ExtendedWindowsAliasCannotBypassSharedRetentionPolicyValidation()
+    public async Task ExtendedWindowsAliasCannotBypassSeparateDestinationValidation()
     {
         if (!OperatingSystem.IsWindows()) return;
         using var temp = new TestFolder(); var job = Job(temp);
         await Assert.ThrowsAsync<InvalidDataException>(() => new SettingsStore(temp.At("settings.json")).SaveAsync(new DesktopSettings
-        { Jobs = [job, job with { Id = Guid.NewGuid(), DestinationDirectory = @"\\?\" + job.DestinationDirectory, RetainSnapshotCount = 5 }] }));
+        { Jobs = [job, job with { Id = Guid.NewGuid(), DestinationDirectory = @"\\?\" + job.DestinationDirectory }] }));
+    }
+
+    [Fact]
+    public async Task RetentionInOneJobCannotRemoveAnotherJobsSnapshots()
+    {
+        using var temp = new TestFolder(); temp.Write("input/file", "a"); temp.Write("other/file", "b");
+        var store = new SettingsStore(temp.At("settings.json")); var first = Job(temp);
+        var second = first with { Id = Guid.NewGuid(), Name = "Other", Sources = [new BackupSource("other", temp.At("other"))], DestinationDirectory = temp.At("backup-other") };
+        await store.SaveAsync(new DesktopSettings { Jobs = [first, second] });
+        var runner = new BackupJobRunner(new DesktopBackupService(), new JobLogStore(temp.At("logs")));
+        await runner.RunAsync(first); await runner.RunAsync(second);
+        Assert.Single(await new BackupEngine().ListSnapshotsAsync(first.DestinationDirectory));
+        Assert.Single(await new BackupEngine().ListSnapshotsAsync(second.DestinationDirectory));
     }
 
     [Fact]

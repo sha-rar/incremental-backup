@@ -61,7 +61,7 @@ To stop automatic backups for a job, clear its automatic-backup checkbox and sav
 
 Retention is optional. In **Backup jobs**, leave both limits blank to keep all snapshots, or enter a maximum snapshot count, an age in days, or both. When both are set, snapshots must satisfy both limits. The newest snapshot is always kept.
 
-Cleanup runs after a successful desktop or scheduled backup. It removes expired versions from history while preserving file data still needed by the snapshots you keep. Expired versions can no longer be restored. All jobs using the same destination must use the same retention settings.
+Cleanup runs after a successful desktop or scheduled backup. It removes expired versions from history while preserving file data still needed by the snapshots you keep. Expired versions can no longer be restored. Each job needs its own backup destination; two jobs cannot share a destination or use folders inside one another.
 
 Do not manually edit or delete files inside the backup destination. Snapshots can share stored data, so deleting one folder by hand could damage other versions.
 
