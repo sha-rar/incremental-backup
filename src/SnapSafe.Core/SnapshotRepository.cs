@@ -5,12 +5,12 @@ namespace SnapSafe.Core;
 internal sealed class SnapshotRepository : IDisposable
 {
     internal static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private readonly FileStream repositoryLock;
+    private readonly FileStream? repositoryLock;
     private readonly Dictionary<string, Dictionary<string, SnapshotFile>> ownedFiles = new(StringComparer.Ordinal);
     internal string SnapshotsDirectory { get; }
     internal string RetainedDataDirectory { get; }
 
-    internal SnapshotRepository(string directory, bool create)
+    internal SnapshotRepository(string directory, bool create, bool readOnly = false)
     {
         directory = Path.GetFullPath(directory);
         PathSafety.EnsureNoLinks(directory);
@@ -24,7 +24,12 @@ internal sealed class SnapshotRepository : IDisposable
             Directory.CreateDirectory(directory);
         else if (!Directory.Exists(SnapshotsDirectory))
             throw new DirectoryNotFoundException($"Backup repository does not exist: {directory}");
-        repositoryLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        // Readers share the lock with each other but not with writers, so recovery works from read-only media.
+        // A repository without a lock file has never been written by a backup, so readers do not create one.
+        if (readOnly)
+            repositoryLock = File.Exists(lockPath) ? new FileStream(lockPath, FileMode.Open, FileAccess.Read, FileShare.Read) : null;
+        else
+            repositoryLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         try
         {
             if (create)
@@ -32,7 +37,7 @@ internal sealed class SnapshotRepository : IDisposable
         }
         catch
         {
-            repositoryLock.Dispose();
+            repositoryLock?.Dispose();
             throw;
         }
     }
@@ -198,5 +203,5 @@ internal sealed class SnapshotRepository : IDisposable
             throw new InvalidDataException("Snapshot path is outside its named sources.");
     }
 
-    public void Dispose() => repositoryLock.Dispose();
+    public void Dispose() => repositoryLock?.Dispose();
 }

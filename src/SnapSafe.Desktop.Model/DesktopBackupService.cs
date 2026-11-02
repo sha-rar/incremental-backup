@@ -19,7 +19,10 @@ public sealed class DesktopBackupService : IDesktopBackupService
     public Task<BackupPlan> ValidateAsync(BackupPlan plan, CancellationToken token) => Task.Run(plan.ValidateForBackup, token);
     public Task<RepositoryOverview> OverviewAsync(string repository, CancellationToken token) => Task.Run(async () =>
     {
-        new DestinationProbe().EnsureAccessible(repository);
+        // History and restore only read the repository, so do not require write access here.
+        var root = Path.GetPathRoot(Path.GetFullPath(repository))!;
+        if (!Directory.Exists(root))
+            throw new BackupDestinationException($"Backup destination is unavailable: {root}. Reconnect the drive or network share.");
         if (!Directory.Exists(Path.Combine(repository, "snapshots")))
             return new RepositoryOverview([], 0);
         var snapshots = await engine.ListSnapshotsAsync(repository, token);
