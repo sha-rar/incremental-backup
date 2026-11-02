@@ -155,6 +155,42 @@ public class BackupEngineTests
     }
 
     [Fact]
+    public async Task ReadOnlyRepositoryCanBeListedInspectedAndRestored()
+    {
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "data");
+        var snapshot = (await engine.CreateSnapshotAsync(Plan(temp))).Snapshot;
+        var files = Directory.GetFiles(temp.PathFor("backup"), "*", SearchOption.AllDirectories);
+        foreach (var file in files) File.SetAttributes(file, FileAttributes.ReadOnly);
+        try
+        {
+            Assert.Equal(snapshot.Id, Assert.Single(await engine.ListSnapshotsAsync(temp.PathFor("backup"))).Id);
+            Assert.Single((await engine.GetSnapshotAsync(temp.PathFor("backup"), snapshot.Id)).Files);
+            await engine.RestoreAsync(temp.PathFor("backup"), snapshot.Id, temp.PathFor("restore"));
+            Assert.Equal("data", await File.ReadAllTextAsync(temp.PathFor("restore/source/file")));
+        }
+        finally
+        {
+            foreach (var file in files) File.SetAttributes(file, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public async Task ReadersAndWritersExcludeEachOther()
+    {
+        using var temp = new TestDirectory();
+        temp.Write("input/file", "data");
+        var snapshot = (await engine.CreateSnapshotAsync(Plan(temp))).Snapshot;
+        using (File.Open(temp.PathFor("backup/.lock"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            Assert.Single(await engine.ListSnapshotsAsync(temp.PathFor("backup")));
+            await Assert.ThrowsAsync<IOException>(() => engine.CreateSnapshotAsync(Plan(temp)));
+        }
+        using (File.Open(temp.PathFor("backup/.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            await Assert.ThrowsAsync<IOException>(() => engine.RestoreAsync(temp.PathFor("backup"), snapshot.Id, temp.PathFor("restore")));
+    }
+
+    [Fact]
     public async Task CorruptStoredDataIsRejectedBeforeRestoreAndBeforeReuse()
     {
         using var temp = new TestDirectory();

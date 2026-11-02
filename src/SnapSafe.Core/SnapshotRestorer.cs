@@ -19,7 +19,7 @@ internal static class SnapshotRestorer
         PathSafety.EnsureNoLinks(destination);
         if (File.Exists(destination))
             throw new IOException("Restore destination must be a directory.");
-        using var store = new SnapshotRepository(repository, create: false);
+        using var store = new SnapshotRepository(repository, create: false, readOnly: true);
         var manifest = await store.ReadAsync(snapshotId, cancellationToken);
         var selected = RestoreSelection.Create(manifest, options.Paths);
         var planned = PlanFiles(destination, selected, options.ConflictPolicy, cancellationToken);

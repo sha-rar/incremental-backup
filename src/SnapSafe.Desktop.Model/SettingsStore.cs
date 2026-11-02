@@ -68,9 +68,12 @@ public sealed class SettingsStore(string path)
             if (!Path.IsPathFullyQualified(job.DestinationDirectory) || job.Sources.Any(source => !Path.IsPathFullyQualified(source.Directory)))
                 throw new InvalidDataException("Saved backup directories must use absolute paths.");
         }
-        foreach (var group in settings.Jobs.GroupBy(job => RepositoryKey(job.DestinationDirectory), StringComparer.OrdinalIgnoreCase))
-            if (group.Select(job => job.Retention).Distinct().Count() > 1)
-                throw new InvalidDataException("Jobs sharing a backup destination must use the same retention policy.");
+        // Retention and incremental history are repository-wide, so each job needs its own repository.
+        var repositories = settings.Jobs.Select(job => RepositoryKey(job.DestinationDirectory)).ToArray();
+        for (var i = 0; i < repositories.Length; i++)
+            for (var j = i + 1; j < repositories.Length; j++)
+                if (Overlaps(repositories[i], repositories[j]))
+                    throw new InvalidDataException($"Backup jobs \"{settings.Jobs[i].Name}\" and \"{settings.Jobs[j].Name}\" must use separate, non-nested backup destinations.");
         if (settings.SelectedJobId is { } selected && !ids.Contains(selected))
             throw new InvalidDataException("Selected backup job does not exist.");
     }
@@ -84,5 +87,11 @@ public sealed class SettingsStore(string path)
             path = Path.GetFullPath(path);
         }
         return Path.TrimEndingDirectorySeparator(path);
+    }
+    private static bool Overlaps(string first, string second)
+    {
+        static bool Contains(string parent, string child) => string.Equals(parent, child, StringComparison.OrdinalIgnoreCase) ||
+            child.StartsWith(Path.EndsInDirectorySeparator(parent) ? parent : parent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        return Contains(first, second) || Contains(second, first);
     }
 }

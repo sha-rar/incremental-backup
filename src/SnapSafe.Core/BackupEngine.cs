@@ -17,7 +17,7 @@ public sealed class BackupEngine
     public async Task<IReadOnlyList<SnapshotSummary>> ListSnapshotsAsync(string repository, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false);
+        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false, readOnly: true);
         var snapshots = await store.ListAsync(cancellationToken);
         return Array.AsReadOnly(snapshots.Select(snapshot => new SnapshotSummary(snapshot.Id, snapshot.CreatedAtUtc,
             snapshot.Files.Length, snapshot.Files.Sum(file => file.Length), snapshot.Complete)).ToArray());
@@ -26,7 +26,7 @@ public sealed class BackupEngine
     public async Task<SnapshotManifest> GetSnapshotAsync(string repository, string snapshotId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false);
+        using var store = new SnapshotRepository(PathSafety.DirectoryPath(repository), create: false, readOnly: true);
         return await store.ReadAsync(snapshotId, cancellationToken);
     }
 
